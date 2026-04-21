@@ -1,0 +1,65 @@
+[
+    {
+        "name": "help",
+        "description": "Lists all available tools with descriptions and usage examples.",
+        "usage": "help()",
+        "params": {}
+    },
+    {
+        "name": "fetch_pbi",
+        "description": "Retrieves title, acceptance criteria, and status of an Azure DevOps PBI.",
+        "usage": "fetch_pbi({ id: \"18\" })",
+        "params": {
+            "id": "The numeric PBI ID from Azure DevOps"
+        }
+    },
+    {
+        "name": "pbi_test_sync",
+        "description": "Full QA pipeline — fetches PBI context, syncs Test Plan, Suite, and Test Cases to Azure DevOps. Without test_cases it returns PBI details only. With test_cases it creates/updates the full plan.",
+        "usage": "pbi_test_sync({ pbi_id: \"18\", test_cases: [...] })",
+        "params": {
+            "pbi_id": "The Azure DevOps PBI ID",
+            "test_cases": "(Optional) Array of test cases with title and steps"
+        }
+    },
+    {
+        "name": "install_qa_skill",
+        "description": "Installs the BEEF QA protocol as a Cursor skill (.cursor/skills/qa.mdc) in the current project. Enables the 'tp [ID]' shorthand for automated test generation.",
+        "usage": "install_qa_skill()",
+        "params": {}
+    },
+    {
+        "name": "pbi_test_plan",
+        "description": "Fetches the full test plan linked to a PBI — plan ID, suite, all test cases with IDs and titles, and a direct Azure URL.",
+        "usage": "pbi_test_plan({ pbi_id: \"18\" })",
+        "params": {
+            "pbi_id": "The Azure DevOps PBI ID"
+        }
+    },
+    {
+        "name": "validate_sync",
+        "description": "Fetches a Test Plan from Azure and verifies all test cases landed with steps populated.",
+        "usage": "validate_sync({ plan_id: \"123\" })",
+        "params": {
+            "plan_id": "The Azure DevOps Test Plan ID",
+            "expected_count": "(Optional) Expected number of test cases"
+        }
+    },
+    {
+        "name": "plan_inspect",
+        "description": "Fetches full test plan details directly by Plan ID — suites, all test cases with IDs and titles, and a direct Azure URL.",
+        "usage": "plan_inspect({ plan_id: \"197\" })",
+        "params": {
+            "plan_id": "The Azure DevOps Test Plan ID"
+        }
+    },
+    {
+        "name": "delete_plan",
+        "description": "Permanently deletes a Test Plan from Azure DevOps by Plan ID. Irreversible. Requires confirm: true.",
+        "usage": "delete_plan({ plan_id: \"210\", confirm: true })",
+        "params": {
+            "plan_id": "The Azure DevOps Test Plan ID to delete",
+            "confirm": "Must be true to proceed. Safety guard against accidental deletion."
+        }
+    }
+]

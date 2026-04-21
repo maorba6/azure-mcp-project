@@ -1,0 +1,55 @@
+---
+description: Professional Azure DevOps QA Orchestrator (High-Fidelity Tests)
+globs: *
+alwaysApply: true
+---
+
+# QA Automation & Synchronization Rules
+
+## ⚠️ CRITICAL: 1 PBI = 1 TEST PLAN = 1 CALL
+- For each `tp [ID]` command, make **exactly ONE call** to `pbi_test_sync` with ALL test cases in a single array.
+- **NEVER** call `pbi_test_sync` multiple times for the same PBI.
+- **NEVER** create separate test plans for separate files — everything goes into ONE plan.
+
+## Shorthand Aliases
+- **"tp [ID]"**: Full QA workflow: Fetch PBI -> Scoped Code Scan -> Generate Tests -> ONE sync call.
+- **"tp [ID] --no-code"**: PBI-only mode: generate tests from acceptance criteria only (no code scan).
+- **"tp [ID] --dry"**: Generate tests and display locally without syncing.
+- **"sync [ID]"**: Re-evaluates and updates an existing Test Plan in-place.
+- **"help"**: Call the `help` tool to list all available MCP tools.
+- **"install qa"** or **"install qa skill"**: Call `install_qa_skill` to inject the QA protocol.
+
+## Scoped Code Scanning
+- **DO NOT** scan the entire repository. Only scan files directly related to the PBI.
+- Read the PBI title and acceptance criteria first, then search for **at most 3-5 relevant files**.
+- **Always skip**: `node_modules/`, `.env`, `.cursor/`, `.git/`, MCP server files (`mcp-server*.js`, `AzureClient.js`, `config/`), test files, build output.
+- If a file belongs to a different feature or PBI, **ignore it**.
+
+## The Professional Workflow (Execution)
+1. **Fetch Context**: Call `pbi_test_sync` with `pbi_id` to retrieve Acceptance Criteria and Title.
+2. **Scoped Analysis**: Search the repo for files matching keywords from the PBI. Scan only those files for:
+    - Logic branches (`if/else`, `switch`, `try/catch`).
+    - Input validations (Regex, Type checking).
+    - Edge cases (Null pointers, empty buffers, specific file suffixes).
+3. **Synthesis**: Create a robust test suite (8-10 cases) covering:
+    - **Happy Path**: Perfect execution flow.
+    - **Negative Logic**: How the code handles garbage input or failures.
+    - **Technical Edge Cases**: Boundary values and environment constraints.
+4. **ONE Push**: Call `pbi_test_sync` with the `pbi_id` and the **complete** `test_cases` array. ONE call only.
+
+## Mandatory Test Case Standards (The "BEEF" Rule)
+- **Minimum 5 Steps**: Every Test Case MUST have at least 5 granular steps. More steps are encouraged for complex flows.
+- **Granular Structure**: Each step must follow:
+    1. **Setup/Prerequisites**: (e.g., "Prepare a mock .py file with syntax errors").
+    2. **Action**: (e.g., "Invoke the PythonParser.read() method").
+    3. **Internal Validation**: (e.g., "Verify the logger captures 'Parsing Started'").
+    4. **Output Verification**: (e.g., "Assert the return object matches the expected schema").
+    5. **Post-condition**: (e.g., "Verify state is set to COMPLETED and no resources leaked").
+- **No Generic Text**: Use technical terms from the code, not "Click button" or "Verify output".
+- **Keep Text Compact**: Titles < 80 chars, steps 1-2 concise sentences each to prevent silent MCP payload failures.
+- **Traceability**: All content must be in professional technical English.
+
+## Structure & Automated Logic
+- **Naming Convention**: The Test Suite is named `[PBI ID] PBI Title` (handled by backend).
+- **Strict Hierarchy**: Ensure a dedicated **Test Suite** exists within the **Test Plan**.
+- **Check-Before-Create**: The backend checks for existing Test Plan links automatically.
