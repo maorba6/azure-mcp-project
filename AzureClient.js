@@ -2,6 +2,7 @@ import { AzureAuth } from './azure/AzureAuth.js';
 import { PbiClient } from './azure/PbiClient.js';
 import { TestPlanClient } from './azure/TestPlanClient.js';
 import { TestCaseClient } from './azure/TestCaseClient.js';
+import { TestDeleteClient } from './azure/TestDeleteClient.js';
 import axios from 'axios';
 
 export class AzureClient {
@@ -10,6 +11,7 @@ export class AzureClient {
         this.pbiClient = new PbiClient(this.auth);
         this.testPlanClient = new TestPlanClient(this.auth);
         this.testCaseClient = new TestCaseClient(this.auth);
+        this.testDeleteClient = new TestDeleteClient(this.auth);
     }
 
     /**
@@ -20,16 +22,23 @@ export class AzureClient {
     }
 
     /**
+     * Get preflight data for a PBI
+     */
+    async getPreflight(pbiId) {
+        return await this.testPlanClient.getPreflight(pbiId);
+    }
+
+    /**
      * Syncs a Test Plan with a specific PBI:
      * Professional Naming, Anti-Duplication, and Deep Coverage.
      */
-    async syncTestPlan(pbiId, testCases, pbiTitle = null) {
+    async syncTestPlan(pbiId, testCases, pbiTitle = null, options = {}) {
         try {
             // 1-4. Plan creation/linking, Suite creation/resolution
-            const { planId, suiteId, idsToDelete } = await this.testPlanClient.ensureSuite(pbiId, pbiTitle);
+            const { planId, suiteId, idsToDelete, mergeMode, existingCasesByTitle, suiteType } = await this.testPlanClient.ensureSuite(pbiId, pbiTitle, options);
             
             // 5-6. Inject Test Cases and Delete Old Ones
-            await this.testCaseClient.injectTestCases(planId, suiteId, idsToDelete, testCases, pbiId);
+            await this.testCaseClient.injectTestCases(planId, suiteId, idsToDelete, testCases, pbiId, mergeMode, existingCasesByTitle, suiteType);
 
             return planId;
         } catch (error) {
@@ -44,16 +53,7 @@ export class AzureClient {
         }
     }
 
-    /**
-     * Fetch existing test plan info
-     */
-    async getTestPlanInfo(pbiId) {
-        const info = await this.testPlanClient.getPlanInfo(pbiId);
-        if (!info) {
-            return `No test plan linked to PBI ${pbiId} yet. Run tp ${pbiId} to generate one.`;
-        }
-        return info;
-    }
+
 
     /**
      * Fetches raw validation data for a test plan (Suites + Test Cases with Steps)
@@ -120,11 +120,19 @@ export class AzureClient {
         }
     }
 
-    async deletePlan(planId) {
-        try {
-            return await this.testPlanClient.deletePlan(planId);
-        } catch (error) {
-            throw new Error(`deletePlan failed: ${error.response?.data?.message || error.message}`);
-        }
+    async getWorkItemSummariesBulk(ids) {
+        return await this.testDeleteClient.getWorkItemSummariesBulk(ids);
+    }
+
+    async deleteWorkItemsByIds(summaries) {
+        return await this.testDeleteClient.deleteByIds(summaries);
+    }
+
+    async discoverRelations(childId, parentId) {
+        return await this.testDeleteClient.discoverRelations(childId, parentId);
+    }
+
+    async executeRelationRemoval(childId, parentId, relation) {
+        return await this.testDeleteClient.executeRemoval(childId, parentId, relation);
     }
 }

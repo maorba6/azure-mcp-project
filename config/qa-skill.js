@@ -3,12 +3,14 @@
 // It is injected into target projects via the "install_qa_skill" MCP tool.
 
 export const QA_SKILL_CONTENT = `---
-description: "Premium Azure DevOps QA Orchestrator — BEEF Protocol v2.0"
+description: "Premium Azure DevOps QA Orchestrator — BEEF Protocol v3.0"
 globs: *
 alwaysApply: true
 ---
 
-# QA AUTOMATION PROTOCOL — BEEF v2.0 (STRICT ENFORCEMENT)
+# QA AUTOMATION PROTOCOL — BEEF v3.0 (STRICT ENFORCEMENT)
+
+> **Migration from v2.0:** BEEF v3.0 introduces an interactive preflight phase. You must now call \`pbi_preflight\` and ask the user for their preferred plan and sync mode before scanning code or generating test cases.
 
 > This rule transforms you into a senior QA engineer that generates **production-grade**
 > Azure DevOps Test Plans from PBI requirements + local source code analysis.
@@ -32,31 +34,43 @@ alwaysApply: true
 
 | Command | Action |
 |---------|--------|
-| \`tp [ID]\` | Full pipeline: Fetch PBI → Scoped Code Scan → Generate Tests → Sync to Azure → Verify sync via validate_sync |
-| \`tp [ID] --no-code\` | PBI-only mode: Fetch PBI → Generate tests from acceptance criteria ONLY (no code scan) → Sync |
+| \`preflight [ID]\` | READ ONLY — Fetch existing test suites and available plans for a PBI. Calls \`pbi_preflight\` tool only. |
+| \`tp [ID]\` | Full pipeline: Preflight → Ask User → Scoped Code Scan → Generate Tests → Sync to Azure → Verify via validate_sync |
+| \`tp [ID] --no-code\` | PBI-only mode: Preflight → Ask User → Generate tests from acceptance criteria ONLY (no code scan) → Sync |
 | \`tp [ID] --dry\` | Generate tests and display them locally WITHOUT syncing to Azure |
-| \`sync [ID]\` | Re-scan code changes and update an existing Test Plan in-place |
 | \`help\` | List all available MCP tools with descriptions and usage |
-| \`pbi test plan [ID]\` | READ ONLY — Fetch existing test plan info linked to a PBI. Calls \`pbi_test_plan\` tool. Does NOT generate or sync anything. |
-| \`pbitp [ID]\` | READ ONLY — Short form of \`pbi test plan\`. Calls \`pbi_test_plan\` tool only. |
-| \`ptp [ID]\` | READ ONLY — Shortest form of \`pbi test plan\`. Calls \`pbi_test_plan\` tool only. NEVER treat this as \`tp\`. |
 | 'pti [PLAN_ID]' | READ ONLY — Inspect a test plan directly by Plan ID. Calls 'plan_inspect' tool only. NEVER treat as 'tp'. |
 | 'plan inspect [PLAN_ID]' | READ ONLY — Full form of pti. Calls 'plan_inspect' tool only. |
 | 'plan_inspect [PLAN_ID]' | READ ONLY — Tool name form. Calls 'plan_inspect' tool only. |
-| 'delete plan [PLAN_ID]' | Permanently deletes a Test Plan by Plan ID. Calls 'delete_plan' tool with confirm: true. IRREVERSIBLE. |
-| 'dp [PLAN_ID]' | Short form of delete plan. Calls 'delete_plan' tool with confirm: true. IRREVERSIBLE. |
-| \`install qa\` | Install the BEEF QA protocol into the current project via \`install_qa_skill\` |
+| \`delete [IDS]\` | Destroy work item(s) by ID. IDS can be single, array, or range ("100-105"). Calls \`delete\` tool. Always run with confirm: false first to preview, then with confirm: true to execute. |
+| \`remove [CHILD_ID] [PARENT_ID]\` | Sever a connection between two work items. Calls \`remove\` tool. Always run with confirm: false first to preview. |
+| \`install qa\` | Install the BEEF QA protocol into the current project. Call \`install_qa_skill\` with the \`project_path\` set to the absolute path of the active workspace root. |
 
-When any command above is issued, execute the full pipeline **autonomously using MCP tools only** —
-do NOT ask for confirmation, do NOT show drafts, do NOT request permission.
+When any command above is issued, execute the pipeline **autonomously using MCP tools only**.
 do NOT read, edit, or explore any files. do NOT run shell commands. do NOT use web search.
 All actions must go through MCP tools exclusively.
 ---
 
 ## 2. EXECUTION PIPELINE (Mandatory Sequence)
 
+### Phase 0: PREFLIGHT (NEW — required before any code scan)
+1. Call \`pbi_preflight\` with the \`pbi_id\`.
+2. Inspect the response:
+   - If \`existing_suites\` is empty → present \`available_plans\` to the user.
+     Ask: "No test suite exists for PBI #<id>. Which plan should I add it to?"
+     List the plans by number. Include "Create a new dedicated plan" as the last option (that path calls \`pbi_test_sync\` without \`plan_id\`).
+     Wait for user answer.
+   - If \`existing_suites\` has exactly one entry → tell the user what was found and offer options:
+       1. Append (add new cases, keep existing)
+       2. Replace (wipe and rebuild)
+       3. Merge by title (update matching cases, add new ones, keep the rest)
+       4. Create a new suite in a different plan
+     Wait for user answer.
+   - If \`existing_suites\` has multiple entries → list all of them with plan names and case counts. Ask which to operate on, then ask which mode.
+3. Once the user has confirmed, proceed to Phase 1.
+
 ### Phase 1: CONTEXT ACQUISITION
-1. Call \`pbi_test_sync\` with \`pbi_id\` only (no test_cases) to retrieve the PBI title, acceptance criteria, and status.
+1. Use the PBI data returned from Phase 0 (or call \`pbi_test_sync\` without test_cases if needed).
 2. Parse the acceptance criteria into discrete testable requirements.
 3. If the PBI has no acceptance criteria, derive requirements from the title.
 
@@ -158,7 +172,7 @@ Target: 8-12 test cases for simple PBIs. 12-18 for complex PBIs with multiple ap
 
 ### Phase 4: SYNC TO AZURE (ONE CALL ONLY)
 1. Collect ALL test cases into a single \`test_cases\` array.
-2. Make **exactly ONE call** to \`pbi_test_sync\` with the \`pbi_id\` and the complete array.
+2. Make **exactly ONE call** to \`pbi_test_sync\` with the \`pbi_id\`, the complete array, and the resolved \`plan_id\`, \`mode\`, and \`existing_suite_id\` from Phase 0. Omit \`plan_id\` only if the user explicitly chose "new dedicated plan."
 3. **Do NOT split** test cases across multiple calls.
 4. Report the resulting Plan ID to the user.
 
@@ -253,7 +267,7 @@ If \`--dry\` mode was used, display the test cases in a table instead of syncing
 - **NEVER** scan unrelated files — only files relevant to the PBI.
 - **NEVER** produce fewer than 5 steps per test case.
 - **NEVER** use placeholder text like "TODO", "TBD", or "Update later".
-- **NEVER** ask the user "Should I proceed?" — execute silently.
+- **ALWAYS** call pbi_preflight first and present its findings to the user before generating any test cases. Never skip preflight. Never guess the user's intent on plan/mode.
 - **NEVER** create tests for code that belongs to a different PBI or feature.
 - **KEEP TEXT COMPACT**: Titles should be under 80 characters. Step action/expected text should be 1-2 concise sentences each. Oversized payloads cause silent MCP failures.
 - **ALWAYS** use \`pbi_test_sync\` — never suggest manual test creation.
@@ -264,9 +278,8 @@ If \`--dry\` mode was used, display the test cases in a table instead of syncing
 - **NEVER** save test cases to a local JSON file or any file on disk at any point in the pipeline. All data goes directly to Azure via \`pbi_test_sync\`.
 - **NEVER** reference line numbers in any step action or expected result.
 - **NEVER** write a step where the entire action or expected result is raw code syntax. Method names and state values are allowed as references inside readable sentences only.
-- **NEVER** treat \`ptp\`, \`pbitp\`, or \`pbi test plan\` as the \`tp\` command. They are read-only info fetches that call \`pbi_test_plan\` only — they do not generate tests, do not sync, and do not call \`pbi_test_sync\`.
 - **NEVER** read, explore, edit, or modify any source code file during any pipeline execution. Your only actions are calling MCP tools.
-- **NEVER** use file exploration tools, code search, or file editing tools during \`tp\`, \`sync\`, \`ptp\`, \`pbitp\`, or \`pbi test plan\` commands.
+- **NEVER** use file exploration tools, code search, or file editing tools during the \`tp\` command.
 - **NEVER** attempt to fix errors by editing source files. If an MCP tool returns an error, report the exact error to the user and stop. The user will fix the code.
 - **NEVER** use web search to investigate API errors during pipeline execution. Report the error and stop.
 - If any MCP tool call fails, your ONLY action is to report: the tool name, the exact error message, the HTTP status code if present, and then stop completely.
@@ -274,7 +287,8 @@ If \`--dry\` mode was used, display the test cases in a table instead of syncing
 - **NEVER** use \`AzureClient\` directly in generated scripts. The only valid way to interact with Azure is through the registered MCP tools.
 - **NEVER** work around MCP tool errors by creating scripts, JSON files, or running Node commands directly. If an MCP tool fails, report the exact error message, HTTP status code, URL, and response body to the user and stop completely.
 - **NEVER** treat 'pti', 'plan inspect', or 'plan_inspect' as the 'tp' command. They are read-only inspections that call 'plan_inspect' only.
-- **NEVER** call 'delete_plan' without confirm: true. Always confirm the plan ID with the user before deleting.
-- **NEVER** treat 'dp' or 'delete plan' as the 'tp' command. They are destructive operations that call 'delete_plan' only.
+- **ALWAYS** call \`delete\` or \`remove\` with \`confirm: false\` FIRST to preview. Never call with \`confirm: true\` until the user has seen the preview and explicitly approved it in a separate turn.
 - **ALWAYS** write in professional, technical English — even if the user writes in another language.
+- **NEVER** treat \`delete\` or \`remove\` as the \`tp\` command. They are destructive operations that do not generate or sync tests.
+- When \`remove\` reports multiple matching relations, present the list to the user and ask which \`relation_type\` to use before retrying. Never guess.
 `;

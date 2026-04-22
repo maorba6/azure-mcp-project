@@ -7,7 +7,7 @@ export class TestCaseClient {
         this.auth = azureAuth;
     }
 
-    async injectTestCases(planId, suiteId, idsToDelete, testCases, pbiId) {
+    async injectTestCases(planId, suiteId, idsToDelete, testCases, pbiId, mergeMode = false, existingCasesByTitle = new Map(), suiteType = "staticTestSuite") {
         const witApi = await this.auth.getWitApi();
         const org = (this.auth.url || "").replace(/\/$/, "");
         const headers = { 'Authorization': this.auth.authHeader, 'Content-Type': 'application/json' };
@@ -20,6 +20,13 @@ export class TestCaseClient {
             console.error(`Syncing Batch ${batchCur}/${batchTotal}...`);
             
             for (const tc of chunk) {
+                if (mergeMode && existingCasesByTitle.has(tc.title)) {
+                    // Update existing
+                    const existingCase = existingCasesByTitle.get(tc.title);
+                    await this.updateTestCaseSteps(existingCase.id, tc.steps);
+                    continue; // Skip the rest of the loop (creation, linking, adding to suite)
+                }
+
                 const stepsXml = `<steps id="0" last="${tc.steps.length}">${tc.steps.map((s, i) =>
                     `<step id="${i + 1}" type="ValidateStep">` +
                     `<parameterizedString isformatted="true">${formatAzureStep(s.action)}</parameterizedString>` +
@@ -31,22 +38,35 @@ export class TestCaseClient {
                     { "op": "add", "path": "/fields/Microsoft.VSTS.TCM.Steps", "value": stepsXml }
                 ], this.auth.projectRaw, "Test Case");
 
-                // Link Test Case → PBI (Traceability)
-                const pbiUrl = `${org}/${this.auth.project}/_apis/wit/workItems/${pbiId}`;
-                await witApi.updateWorkItem(
-                    null,
-                    [{
-                        op: "add",
-                        path: "/relations/-",
-                        value: {
-                            rel: "Microsoft.VSTS.Common.TestedBy-Reverse",
-                            url: pbiUrl,
-                            attributes: { comment: "Linked by QA MCP Server" }
+                // Link Test Case → PBI (Traceability) - skip for requirement suites
+                if (suiteType !== "RequirementTestSuite" && suiteType !== "requirementTestSuite") {
+                    const pbiUrl = `${org}/${this.auth.project}/_apis/wit/workItems/${pbiId}`;
+                    try {
+                        await witApi.updateWorkItem(
+                            null,
+                            [{
+                                op: "add",
+                                path: "/relations/-",
+                                value: {
+                                    rel: "Microsoft.VSTS.Common.TestedBy-Reverse",
+                                    url: pbiUrl,
+                                    attributes: { comment: "Linked by QA MCP Server" }
+                                }
+                            }],
+                            Number(workItem.id),
+                            this.auth.projectRaw
+                        );
+                    } catch (linkErr) {
+                        const errMsg = linkErr.response?.data?.message || linkErr.message || "";
+                        const isDuplicate = errMsg.includes("TF401035") || errMsg.toLowerCase().includes("relation already exists");
+                        
+                        if (isDuplicate) {
+                            console.warn(`Idempotent relation ignored for Test Case ${workItem.id}: ${errMsg}`);
+                        } else {
+                            throw linkErr;
                         }
-                    }],
-                    Number(workItem.id),
-                    this.auth.projectRaw
-                );
+                    }
+                }
 
                 // Default test configuration (usually 1); required by Suite Test Case Add in many orgs — omitting can yield 405
                 await axios.post(
@@ -68,5 +88,21 @@ export class TestCaseClient {
                 );
             }
         }
+    }
+
+    async updateTestCaseSteps(testCaseId, steps) {
+        const witApi = await this.auth.getWitApi();
+        const stepsXml = `<steps id="0" last="${steps.length}">${steps.map((s, i) =>
+            `<step id="${i + 1}" type="ValidateStep">` +
+            `<parameterizedString isformatted="true">${formatAzureStep(s.action)}</parameterizedString>` +
+            `<parameterizedString isformatted="true">${formatAzureStep(s.expected)}</parameterizedString>` +
+            `</step>`).join('')}</steps>`;
+
+        await witApi.updateWorkItem(
+            null,
+            [{ op: "replace", path: "/fields/Microsoft.VSTS.TCM.Steps", value: stepsXml }],
+            Number(testCaseId),
+            this.auth.projectRaw
+        );
     }
 }
